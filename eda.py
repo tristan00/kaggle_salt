@@ -76,7 +76,7 @@ def get_segnet():
     pass
 
 def get_vgg():
-    input_img = Input((128, 128, 4), name='img')
+    input_img = Input((128, 128, 5), name='img')
     input_features = Input((1,), name='feat')
 
     c1 = Conv2D(8, (3, 3), activation='relu', padding='same')(input_img)
@@ -165,69 +165,90 @@ def generate_input_image_and_masks(mask_locs, batch_size = 32, max_loop = 2, tra
         if train:
             transpose_l = [0, 1]
             rotation_l = [0, 1, 2, 3]
-            noise_l = [0]
+            noise_l = [0,1, 2, 3]
         else:
             transpose_l = [0, 1]
-            rotation_l = [0, 1, 2, 3]
+            rotation_l = [0, 1, 2]
             noise_l = [0]
 
         for transpose in transpose_l:
             for rotation in rotation_l:
-                mask_name = os.path.basename(mask_loc).split('.')[0]
-                image_loc = train_files_loc + '/images/{0}.png'.format(mask_name)
+                for noise in noise_l:
+                    mask_name = os.path.basename(mask_loc).split('.')[0]
+                    image_loc = train_files_loc + '/images/{0}.png'.format(mask_name)
 
-                start_image = Image.open(image_loc).convert('LA')
-                np_image = np.array(start_image.getdata())[:, 0]
-                np_image = np_image.reshape(start_image.size[1], start_image.size[0])
+                    start_image = Image.open(image_loc).convert('LA')
+                    np_image = np.array(start_image.getdata())[:, 0]
+                    np_image = np_image.reshape(start_image.size[1], start_image.size[0])
+                    np_image = gaussian_noise(np_image, noise)
 
-                x_center_mean = np_image[border:-border, border:-border].mean()
-                x_csum = (np.float32(np_image) - x_center_mean).cumsum(axis=0)
-                x_csum -= x_csum[border:-border, border:-border].mean()
-                x_csum /= max(1e-3, x_csum[border:-border, border:-border].std())
+                    x_center_mean = np_image[border:-border, border:-border].mean()
+                    x_csum = (np.float32(np_image) - x_center_mean).cumsum(axis=0)
+                    x_csum -= x_csum[border:-border, border:-border].mean()
+                    x_csum /= max(1e-3, x_csum[border:-border, border:-border].std())
 
-                img_eq = exposure.equalize_hist(np_image)
-                np_image = np_image.astype(np.float32)
-                np_image /= 255.0
-                # np_image = gaussian_noise(np_image, noise)
+                    y_center_mean = np_image[border:-border, border:-border].mean()
+                    y_csum = (np.float32(np_image) - y_center_mean).cumsum(axis=1)
+                    y_csum -= y_csum[border:-border, border:-border].mean()
+                    y_csum /= max(1e-3, y_csum[border:-border, border:-border].std())
 
-                start_mask = Image.open(mask_loc).convert('LA')
-                np_mask = np.array(start_mask.getdata())[:, 0]
-                np_mask = np_mask.reshape(start_mask.size[1], start_mask.size[0])
-                # if np_mask.max() == 0:
-                #     continue
-                np_mask= np_mask // 255
+                    img_eq = exposure.equalize_hist(np_image)
+                    np_image = np_image.astype(np.float32)
+
+                    # p2, p98 = np.percentile(np_image, (5, 95))
+                    # img_rescale = exposure.rescale_intensity(np_image, in_range=(p2, p98))
+
+                    np_image /= 255.0
+                    # np_image = gaussian_noise(np_image, noise)
+
+                    start_mask = Image.open(mask_loc).convert('LA')
+                    np_mask = np.array(start_mask.getdata())[:, 0]
+                    np_mask = np_mask.reshape(start_mask.size[1], start_mask.size[0])
+                    # if np_mask.max() == 0:
+                    #     continue
+                    np_mask= np_mask // 255
 
 
-                if transpose == 1:
-                    np_image = np.transpose(np_image)
-                    np_mask = np.transpose(np_mask)
-                    x_csum =  np.transpose(x_csum)
-                    img_eq =  np.transpose(img_eq)
+                    if transpose == 1:
+                        np_image = np.transpose(np_image)
+                        np_mask = np.transpose(np_mask)
+                        x_csum =  np.transpose(x_csum)
+                        img_eq =  np.transpose(img_eq)
+                        y_csum =  np.transpose(y_csum)
+                        # img_rescale = np.transpose(img_rescale)
 
-                np_image = np.rot90(np_image, rotation)
-                np_mask = np.rot90(np_mask, rotation)
-                x_csum = np.rot90(x_csum, rotation)
-                img_eq = np.rot90(img_eq, rotation)
+                    np_image = np.rot90(np_image, rotation)
+                    np_mask = np.rot90(np_mask, rotation)
+                    x_csum = np.rot90(x_csum, rotation)
+                    img_eq = np.rot90(img_eq, rotation)
+                    y_csum = np.rot90(y_csum, rotation)
 
-                np_image = np.pad(np_image, ((0, 27), (0, 27)), 'constant')
-                np_mask = np.pad(np_mask, ((0, 27), (0, 27)), 'constant')
-                x_csum = np.pad(x_csum, ((0, 27), (0, 27)), 'constant')
-                img_eq = np.pad(img_eq, ((0, 27), (0, 27)), 'constant')
+                    # img_rescale = np.rot90(img_rescale, rotation)
 
-                g = gaussian_gradient_magnitude(np_image, sigma = .4)
+                    np_image = np.pad(np_image, ((0, 27), (0, 27)), 'constant')
+                    np_mask = np.pad(np_mask, ((0, 27), (0, 27)), 'constant')
+                    x_csum = np.pad(x_csum, ((0, 27), (0, 27)), 'constant')
+                    img_eq = np.pad(img_eq, ((0, 27), (0, 27)), 'constant')
+                    y_csum = np.pad(y_csum, ((0, 27), (0, 27)), 'constant')
 
-                # np_image[127, 127] = df[df['id'] == mask_name]['z'].values[0]
+                    # img_rescale = np.pad(img_rescale, ((0, 27), (0, 27)), 'constant')
 
-                np_image = np.dstack((np.expand_dims(np_image, axis=2),
-                                      np.expand_dims(g, axis=2),
-                                      np.expand_dims(x_csum, axis=2),
-                                      np.expand_dims(img_eq, axis=2)
-                                      ))
+                    g = gaussian_gradient_magnitude(np_image, sigma = .4)
 
-                np_mask = np.expand_dims(np_mask, 2)
+                    # np_image[127, 127] = df[df['id'] == mask_name]['z'].values[0]
 
-                depth_scaled = df[df['id'] == mask_name]['z'].values[0]/1000
-                yield np_image, np_mask, depth_scaled
+                    np_image = np.dstack((np.expand_dims(np_image, axis=2),
+                                          np.expand_dims(g, axis=2),
+                                          np.expand_dims(x_csum, axis=2),
+                                          np.expand_dims(img_eq, axis=2),
+                                          np.expand_dims(y_csum, axis=2)
+                                          # np.expand_dims(img_rescale, axis=2)
+                                          ))
+
+                    np_mask = np.expand_dims(np_mask, 2)
+
+                    depth_scaled = df[df['id'] == mask_name]['z'].values[0]/1000
+                    yield np_image, np_mask, depth_scaled
 
         # if len(x) == batch_size:
         #     yield np.array(x), np.array(y)
@@ -247,6 +268,11 @@ def image_gen_test():
         x_csum = (np.float32(np_image) - x_center_mean).cumsum(axis=0)
         x_csum -= x_csum[border:-border, border:-border].mean()
         x_csum /= max(1e-3, x_csum[border:-border, border:-border].std())
+        y_center_mean = np_image[border:-border, border:-border].mean()
+        y_csum = (np.float32(np_image) - y_center_mean).cumsum(axis=1)
+        y_csum -= y_csum[border:-border, border:-border].mean()
+        y_csum /= max(1e-3, y_csum[border:-border, border:-border].std())
+
         img_eq = exposure.equalize_hist(np_image)
         np_image = np_image.astype(np.float32)
         np_image /= 255.0
@@ -254,6 +280,8 @@ def image_gen_test():
         np_image = np.pad(np_image, ((0, 27), (0, 27)), 'constant')
         x_csum = np.pad(x_csum, ((0, 27), (0, 27)), 'constant')
         img_eq = np.pad(img_eq, ((0, 27), (0, 27)), 'constant')
+        y_csum = np.pad(y_csum, ((0, 27), (0, 27)), 'constant')
+
         g = gaussian_gradient_magnitude(np_image, sigma=.4)
 
 
@@ -263,7 +291,8 @@ def image_gen_test():
         np_image = np.dstack((np.expand_dims(np_image, axis=2),
                               np.expand_dims(g, axis=2),
                               np.expand_dims(x_csum, axis=2),
-                              np.expand_dims(img_eq, axis=2)
+                              np.expand_dims(img_eq, axis=2),
+                              np.expand_dims(y_csum, axis=2)
                               ))
 
         depth_scaled = df[df['id'] == mask_name]['z'].values[0] / 1000
@@ -369,16 +398,16 @@ def main():
     # x_val = np.array(x_val)
     # y_val = np.array(y_val)
     # d_val = np.array(d_val)
-    #
+    # #
 
     model = get_vgg()
     # cb = keras.callbacks.EarlyStopping(monitor='val_loss',
     #                               min_delta=0,
     #                               patience=10,
     #                               verbose=0, mode='auto')
-    # reduce_lr_loss = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.5, patience=1, verbose=1, min_lr=1e-5)
+    # reduce_lr_loss = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.5, patience=0, verbose=1, min_lr=.000001)
     # mcp_save = keras.callbacks.ModelCheckpoint('model-tgs-salt-1.h5', save_best_only=True, monitor='val_loss', verbose=1)
-    # model.fit({'img': x_train, 'feat': d_train}, y_train, batch_size=32, epochs=200,
+    # model.fit({'img': x_train, 'feat': d_train}, y_train, batch_size=64, epochs=200,
     #           callbacks=[cb, reduce_lr_loss, mcp_save],
     #           validation_data=({'img': x_val, 'feat': d_val}, y_val))
     model.load_weights('model-tgs-salt-1.h5')
