@@ -121,6 +121,15 @@ def get_model():
     return model.to(device)
 
 
+def gaussian_noise(np_image, num):
+    if num == 0:
+        return np_image
+    else:
+        rand_array = np.random.normal(0,1,np_image.shape[0]*np_image.shape[1])
+        rand_array = np.reshape(rand_array, (np_image.shape[0],np_image.shape[1]))
+        return np.add(np_image, rand_array)
+
+
 def load_image(path, mask=False, is_test = False):
     """
     Load image from a given path and pad it on the sides, so that eash side is divisible by 32 (newtwork requirement)
@@ -138,10 +147,12 @@ def load_image(path, mask=False, is_test = False):
         rotation = random.randint(0,3)
         transpose =  random.randint(0,1) == 1
         strech = False
+        noise = 0
     else:
         rotation = 0
         transpose = False
         strech = False
+        noise = 0
 
     if mask:
         # Convert mask to 0 and 1 format
@@ -179,6 +190,8 @@ def load_image(path, mask=False, is_test = False):
         img = np.rot90(img, rotation)
         if not strech:
             img = np.pad(img, ((0, 27), (0, 27)), 'constant')
+
+        img = gaussian_noise(img, noise)
 
         x_center_mean = img[border:-border, border:-border].mean()
         x_csum = (np.float32(img) - x_center_mean).cumsum(axis=0)
@@ -249,7 +262,7 @@ def main():
     prev_val_loss = 99999.0
 
     results = []
-    patience = 200
+    patience = 40
 
     for e in range(10000):
         train_loss = []
